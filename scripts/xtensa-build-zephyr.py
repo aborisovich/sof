@@ -291,7 +291,7 @@ def check_west_installation():
 
 def west_reinitialize(west_root_dir: pathlib.Path, west_manifest_path: pathlib.Path):
 	"""[summary] Performs west reinitialization to SOF manifest file asking user for permission.
-	Prints error message if script is running in non-interactive mode.
+	Does not ask for permission when run in --no-interactive mode.
 
 	:param west_root_dir: directory where is initialized.
 	:type west_root_dir: pathlib.Path
@@ -304,19 +304,17 @@ def west_reinitialize(west_root_dir: pathlib.Path, west_manifest_path: pathlib.P
 	message = "West is initialized to manifest other than SOFs!\n"
 	message +=  f"Initialized to manifest: {west_manifest_path}." + "\n"
 	dot_west_directory  = pathlib.Path(west_root_dir.resolve(), ".west")
-	if args.no_interactive:
-		message += f"Try deleting {dot_west_directory } directory and rerun this script."
-		raise RuntimeError(message)
-	question = message + "Reinitialize west to SOF manifest? [Y/n] "
-	print(f"{question}")
-	while True:
-		reinitialize_answer = input().lower()
-		if reinitialize_answer == "y" or reinitialize_answer == "n":
-			break
-		sys.stdout.write('Please respond with \'Y\' or \'n\'.\n')
+	if not args.no_interactive:
+		question = message + "Reinitialize west to SOF manifest? [Y/n] "
+		print(f"{question}")
+		while True:
+			reinitialize_answer = input().lower()
+			if reinitialize_answer == "y" or reinitialize_answer == "n":
+				break
+			sys.stdout.write('Please respond with \'Y\' or \'n\'.\n')
+		if reinitialize_answer != 'y':
+			sys.exit("Can not proceed. Reinitialize your west manifest to SOF and rerun this script.")
 
-	if reinitialize_answer != 'y':
-		sys.exit("Can not proceed. Reinitialize your west manifest to SOF and rerun this script.")
 	shutil.rmtree(dot_west_directory)
 	execute_command(["west", "init", "-l", f"{SOF_TOP}"], cwd=west_top)
 
