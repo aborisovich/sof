@@ -47,10 +47,14 @@ jobs:
              fi &&
              git log --oneline -n 5 --decorate --graph --no-abbrev-commit
 
-      # https://github.com/zephyrproject-rtos/docker-image
-      # Note: env variables can be passed to the container with
-      # -e https_proxy=...
-      - name: build
-        run: cd workspace && ./sof/zephyr/docker-run.sh
-             ./sof/zephyr/docker-build.sh --cmake-args=-DEXTRA_CFLAGS=-Werror
-             --cmake-args=--warn-uninitialized ${{ matrix.IPC_platforms }}
+      - name: build in Docker container
+        # branch name set to @master
+        uses: aborisovich/sof/actions/zephyr-docker-build@build-sof-in-zephyr
+        with:
+          platform: ${{ matrix.IPC_platforms }}
+
+  # docker_build:
+  #   needs: prepare_environment
+  #   uses: ./.github/workflows/zephyr-docker-build.yml
+  #   with:
+

@@ -1,0 +1,18 @@
+name: "Zephyr Docker build"
+description: "Builds SOF application with Zephyr using Docker container"
+
+inputs:
+  platform:
+    description: "Name of the SOF platform to build"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+        # https://github.com/zephyrproject-rtos/docker-image
+        # Note: env variables can be passed to the container with
+        # -e https_proxy=...
+    - run: cd workspace && ./sof/zephyr/docker-run.sh
+            ./sof/zephyr/docker-build.sh --cmake-args=-DEXTRA_CFLAGS=-Werror
+            --cmake-args=--warn-uninitialized ${{ inputs.platform }}
+      shell: bash
