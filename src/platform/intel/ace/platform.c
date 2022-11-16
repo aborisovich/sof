@@ -21,6 +21,10 @@
 #include <ipc/info.h>
 #include <kernel/abi.h>
 #include <rtos/clk.h>
+#include <adsp_memory.h>
+#include <zephyr/drivers/mm/mm_drv_intel_adsp_mtl_tlb.h>
+#include <zephyr/pm/pm.h>
+#include <sof/debug/panic.h>
 
 #include <sof_versions.h>
 #include <stdint.h>
@@ -71,6 +75,59 @@ int platform_boot_complete(uint32_t boot_message)
 	return ipc_platform_send_msg(&msg);
 }
 
+/* address where zephyr PM will save memory during D3 transition */
+extern void *global_imr_ram_storage;
+
+/* notifier called before every power state transition */
+static void notify_pm_state_entry(enum pm_state state)
+{
+	size_t storage_buffer_size;
+
+	if (state == PM_STATE_SOFT_OFF) {
+		/* allocate IMR global_imr_ram_storage */
+		const struct device *tlb_dev = DEVICE_DT_GET(DT_NODELABEL(tlb));
+
+		__ASSERT_NO_MSG(tlb_dev);
+		const struct intel_adsp_tlb_api *tlb_api =
+				(struct intel_adsp_tlb_api *)tlb_dev->api;
+
+		/* get HPSRAM storage buffer size */
+		storage_buffer_size = tlb_api->get_storage_size();
+
+		/* add space for LPSRAM */
+		storage_buffer_size += LP_SRAM_SIZE;
+
+		/* allocate IMR buffer and store it in the global pointer */
+		global_imr_ram_storage = rmalloc(SOF_MEM_ZONE_SYS,
+						 0,
+						 SOF_MEM_CAPS_L3,
+						 storage_buffer_size);
+	}
+}
+
+/* notifier called after every power state transition */
+static void notify_pm_state_exit(enum pm_state state)
+{
+	if (state == PM_STATE_SOFT_OFF)	{
+		/* free global_imr_ram_storage */
+		rfree(global_imr_ram_storage);
+		global_imr_ram_storage = NULL;
+
+		/* zero the mask before D3 context restore */
+		struct ipc *ipc = ipc_get();
+		ipc->task_mask = 0;
+		ipc->pm_prepare_D3 = false;
+
+		/* send FW Ready message */
+		platform_boot_complete(0);
+	}
+}
+
+static struct pm_notifier pm_state_notifier = {
+	.state_entry = notify_pm_state_entry,
+	.state_exit = notify_pm_state_exit,
+};
+
 /* Runs on the primary core only */
 int platform_init(struct sof *sof)
 {
@@ -96,6 +153,9 @@ int platform_init(struct sof *sof)
 	ret = dmac_init(sof);
 	if (ret < 0)
 		return ret;
+
+	/* register power states entry / exit notifiers */
+	pm_notifier_register(&pm_state_notifier);
 
 	/* initialize the host IPC mechanisms */
 	trace_point(TRACE_BOOT_PLATFORM_IPC);
