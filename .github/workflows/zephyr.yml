@@ -9,6 +9,14 @@ on: [push, pull_request, workflow_dispatch, workflow_call]
 
 jobs:
   build:
+    # The if clause determines when the workflow is to be run:
+    # - if the current event is not a pull request;
+    # - or, if the head and base repositories for the pull request differ
+    # https://wildwolf.name/github-actions-how-to-avoid-running-the-same-workflow-multiple-times/
+    if: |
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name !=
+      github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-20.04
 
     strategy:
