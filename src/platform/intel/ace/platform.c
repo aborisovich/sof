@@ -24,10 +24,15 @@
 #include <adsp_memory.h>
 #include <zephyr/drivers/mm/mm_drv_intel_adsp_mtl_tlb.h>
 #include <zephyr/pm/pm.h>
+#include <intel_adsp_ipc_devtree.h>
 #include <sof/debug/panic.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 
 #include <sof_versions.h>
 #include <stdint.h>
+
+extern bool is_after_d3;
 
 static const struct sof_ipc_fw_ready ready
 	__section(".fw_ready") = {
@@ -102,6 +107,8 @@ static void notify_pm_state_entry(enum pm_state state)
 						 0,
 						 SOF_MEM_CAPS_L3,
 						 storage_buffer_size);
+
+		pm_device_action_run(INTEL_ADSP_IPC_HOST_DEV, PM_DEVICE_ACTION_SUSPEND);
 	}
 }
 
@@ -113,13 +120,31 @@ static void notify_pm_state_exit(enum pm_state state)
 		rfree(global_imr_ram_storage);
 		global_imr_ram_storage = NULL;
 
-		/* zero the mask before D3 context restore */
-		struct ipc *ipc = ipc_get();
-		ipc->task_mask = 0;
-		ipc->pm_prepare_D3 = false;
+		// this function runs zephyr/soc/xtensa/intel_adsp/common/ipc.c::ipc_pm_action()
+		// that is a power-manager API switch for power states change per-device
+		pm_device_action_run(INTEL_ADSP_IPC_HOST_DEV, PM_DEVICE_ACTION_RESUME);
 
-		/* send FW Ready message */
+		// validate that ipc device state is PM_DEVICE_STATE_ACTIVE
+		enum pm_device_state ipc_state = 0;
+		pm_device_state_get(INTEL_ADSP_IPC_HOST_DEV, &ipc_state);
+		if (ipc_state != PM_DEVICE_STATE_ACTIVE)
+			while(true) {} // replace with assert or recovery?
+
+		// trap to confirm no policy state locks are in-place
+		// those locks are set-up in sof/zephyr/wrapper.c::task_main_start()
+		// and released in the sof\src\ipc\ipc-zephyr.c::ipc_platform_do_cmd()
+		// (a function executed as ipc_task by the ipc worker)
+		if (pm_policy_state_lock_is_active(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES)) {
+			while(true);
+		}
+		while(pm_policy_state_lock_is_active(PM_STATE_SOFT_OFF, PM_ALL_SUBSTATES)) {
+			while(true);
+		}
+
+		// sends fw-ready message signalling successfull exit from D3 state
 		platform_boot_complete(0);
+		// temporary global value for debugging and setting up while breakpoints
+		is_after_d3 = true;
 	}
 }
 

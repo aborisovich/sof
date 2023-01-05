@@ -22,6 +22,10 @@
 #else
 #include <sof/lib/pm_runtime.h>
 #endif
+#ifdef CONFIG_PM_DEVICE_RUNTIME
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
+#endif
 #include <sof/lib/uuid.h>
 #include <rtos/wait.h>
 #include <sof/list.h>
@@ -31,10 +35,15 @@
 #include <sof/schedule/task.h>
 #include <rtos/spinlock.h>
 #include <ipc/header.h>
+#include <zephyr/pm/state.h>
+#include <zephyr/irq.h>
+#include <zephyr/pm/policy.h>
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+bool is_after_d3 = false;
 
 /* 8fa1d42f-bc6f-464b-867f-547af08834da */
 DECLARE_SOF_UUID("ipc-task", ipc_task_uuid, 0x8fa1d42f, 0xbc6f, 0x464b,
@@ -60,6 +69,10 @@ static uint32_t g_last_data, g_last_ext_data;
  */
 static bool message_handler(const struct device *dev, void *arg, uint32_t data, uint32_t ext_data)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	struct ipc *ipc = (struct ipc *)arg;
 
 	k_spinlock_key_t key;
@@ -77,6 +90,55 @@ static bool message_handler(const struct device *dev, void *arg, uint32_t data, 
 	k_spin_unlock(&ipc->lock, key);
 
 	return false;
+}
+
+/**
+ * @brief IPC device suspend handler callback function.
+ * Checks whether device power state should be actually changed.
+ *
+ * @param dev IPC device.
+ * @param arg IPC struct pointer.
+ */
+static int ipc_device_suspend_handler(const struct device *dev, void *arg)
+{
+	struct ipc *ipc = (struct ipc *)arg;
+
+	// we are not entering D3 - return error code
+	// so the pm_device_runtime_enable does not put device to PM_DEVICE_STATE_SUSPENDED
+	if (!(ipc->task_mask & IPC_TASK_POWERDOWN)) {
+		return -EALREADY;
+	}
+
+	return 0;
+}
+
+/**
+ * @brief IPC device resume handler callback function.
+ * Resets IPC control after context restore.
+ *
+ * @param dev IPC device.
+ * @param arg IPC struct pointer.
+ */
+static int ipc_device_resume_handler(const struct device *dev, void *arg)
+{
+	struct ipc *ipc = (struct ipc *)arg;
+	ipc_set_drvdata(ipc, NULL);
+	ipc->task_mask = 0;
+	ipc->pm_prepare_D3 = false;
+
+	/* attach handlers */
+	intel_adsp_ipc_set_message_handler(INTEL_ADSP_IPC_HOST_DEV, message_handler, ipc);
+
+	/* schedule task */
+	schedule_task_init_edf(&ipc->ipc_task, SOF_UUID(ipc_task_uuid),
+				&ipc_task_ops, ipc, 0, 0);
+
+	// we mke sure interrupts are enabled after waking from D3.
+	volatile bool stop = true;
+	if (!irq_is_enabled(DT_IRQN(INTEL_ADSP_IPC_HOST_DTNODE)))
+		while(stop) {} // assert or recovery?
+
+	return 0;
 }
 
 #if CONFIG_DEBUG_IPC_COUNTERS
@@ -121,6 +183,10 @@ int ipc_platform_compact_write_msg(struct ipc_cmd_hdr *hdr, int words)
 
 enum task_state ipc_platform_do_cmd(struct ipc *ipc)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	struct ipc_cmd_hdr *hdr;
 
 	hdr = ipc_compact_read_msg();
@@ -131,6 +197,13 @@ enum task_state ipc_platform_do_cmd(struct ipc *ipc)
 	if (ipc->task_mask & IPC_TASK_POWERDOWN ||
 	    ipc_get()->pm_prepare_D3) {
 #if defined(CONFIG_PM_POLICY_CUSTOM)
+		// this unlocks policy locks set in sof/zephyr/wrapper.c
+		while(pm_policy_state_lock_is_active(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES)) {
+			pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+		}
+		while(pm_policy_state_lock_is_active(PM_STATE_SOFT_OFF, PM_ALL_SUBSTATES)) {
+			pm_policy_state_lock_put(PM_STATE_SOFT_OFF, PM_ALL_SUBSTATES);
+		}
 		/**
 		 * @note For primary core this function
 		 * will only force set lower power state
@@ -163,6 +236,10 @@ void ipc_platform_complete_cmd(struct ipc *ipc)
 
 int ipc_platform_send_msg(const struct ipc_msg *msg)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	if (!intel_adsp_ipc_is_complete(INTEL_ADSP_IPC_HOST_DEV))
 		return -EBUSY;
 
@@ -188,6 +265,8 @@ int platform_ipc_init(struct ipc *ipc)
 
 	/* attach handlers */
 	intel_adsp_ipc_set_message_handler(INTEL_ADSP_IPC_HOST_DEV, message_handler, ipc);
+	intel_adsp_ipc_set_suspend_handler(INTEL_ADSP_IPC_HOST_DEV, ipc_device_suspend_handler, ipc);
+	intel_adsp_ipc_set_resume_handler(INTEL_ADSP_IPC_HOST_DEV, ipc_device_resume_handler, ipc);
 
 	return 0;
 }

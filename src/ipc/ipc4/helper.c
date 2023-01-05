@@ -41,6 +41,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+extern bool is_after_d3;
+
 LOG_MODULE_DECLARE(ipc, CONFIG_SOF_LOG_LEVEL);
 
 #define IPC4_MOD_ID(x) ((x) >> 16)
@@ -201,6 +203,10 @@ static int ipc4_create_pipeline(uint32_t pipeline_id, uint32_t priority,
 int ipc_pipeline_new(struct ipc *ipc, ipc_pipe_new *_pipe_desc)
 {
 	struct ipc4_pipeline_create *pipe_desc = ipc_from_pipe_new(_pipe_desc);
+
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 
 	tr_dbg(&ipc_tr, "ipc: pipeline id = %u", (uint32_t)pipe_desc->primary.r.instance_id);
 

@@ -159,7 +159,8 @@ void ipc_send_queued_msg(void)
 out:
 	k_spin_unlock(&ipc->lock, key);
 }
-
+// turned off optimiztion to read values of the ipc pointer.
+__attribute__((optimize("-O0")))
 static void schedule_ipc_worker(void)
 {
 	/*
@@ -169,7 +170,23 @@ static void schedule_ipc_worker(void)
 #ifdef __ZEPHYR__
 	struct ipc *ipc = ipc_get();
 
-	k_work_schedule(&ipc->z_delayed_work, K_USEC(IPC_PERIOD_USEC));
+	// manual brak point to stop here
+	// volatile bool stop = true;
+	// while(stop) {}
+	// debugger returns value of timeout = 2 (always - before and after entering D3)
+	volatile k_timeout_t timeout = K_USEC(IPC_PERIOD_USEC);
+	// value returned ret = 1 (which is ok).
+	// we suspect that issue is caused by random values written to
+	// ipc->z_delayed_work as a result of k_work_schedule function.
+	volatile int ret = k_work_schedule(&ipc->z_delayed_work, timeout);
+	// in this point in code,
+	// before D3 state:
+	// ipc->z_delayed_work has random values in range of ~100000 - ~2000000
+	// after D3 state:
+	// ipc->z_delayed_work has random values in range of ~INT_MAX - ~INT64_MAX
+	// (values in range ~2100000000 or even negative results -1897672900)
+	// (my suspiction is that negative values are caused by convertions from 64bit of
+	// really big numbers to 32 bit result?)
 #endif
 }
 
@@ -213,6 +230,7 @@ void ipc_msg_send(struct ipc_msg *msg, void *data, bool high_priority)
 			list_item_append(&msg->list, &ipc->msg_list);
 	}
 
+	// ipc worker executes ipc tasks from the queue
 	schedule_ipc_worker();
 
 	k_spin_unlock(&ipc->lock, key);

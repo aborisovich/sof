@@ -34,6 +34,8 @@
 
 LOG_MODULE_REGISTER(idc, CONFIG_SOF_LOG_LEVEL);
 
+extern bool is_after_d3;
+
 /** \brief IDC message payload per core. */
 static SHARED_DATA struct idc_payload static_payload[CONFIG_CORE_COUNT];
 
@@ -279,6 +281,9 @@ static void idc_prepare_d0ix(void)
  */
 void idc_cmd(struct idc_msg *msg)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	uint32_t type = iTS(msg->header);
 	int ret = 0;
 

@@ -43,6 +43,8 @@
 
 LOG_MODULE_DECLARE(ipc, CONFIG_SOF_LOG_LEVEL);
 
+extern bool is_after_d3;
+
 struct ipc4_msg_data {
 	struct ipc_cmd_hdr msg_in; /* local copy of current message from host header */
 	struct ipc_cmd_hdr msg_out; /* local copy of current message to host header */
@@ -64,6 +66,9 @@ static struct ipc_msg msg_notify;
  */
 static int ipc4_new_pipeline(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (is_after_d3)
+	// 	while(stop) {}
 	struct ipc *ipc = ipc_get();
 
 	return ipc_pipeline_new(ipc, (ipc_pipe_new *)ipc4);
@@ -612,6 +617,9 @@ static int ipc4_init_module_instance(struct ipc4_message_request *ipc4)
 
 static int ipc4_bind_module_instance(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_bind_unbind bu;
 	struct ipc *ipc = ipc_get();
 
@@ -638,6 +646,9 @@ static int ipc4_unbind_module_instance(struct ipc4_message_request *ipc4)
 
 static int ipc4_get_large_config_module_instance(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_large_config_reply reply;
 	struct ipc4_module_large_config config;
 	char *data = ipc_get()->comp_data;
@@ -715,6 +726,9 @@ static int ipc4_get_large_config_module_instance(struct ipc4_message_request *ip
 
 static int ipc4_set_large_config_module_instance(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_large_config config;
 	struct comp_dev *dev = NULL;
 	const struct comp_driver *drv;
@@ -763,6 +777,9 @@ static int ipc4_set_large_config_module_instance(struct ipc4_message_request *ip
 
 static int ipc4_delete_module_instance(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_delete_instance module;
 	struct ipc *ipc = ipc_get();
 	uint32_t comp_id;
@@ -787,6 +804,9 @@ static int ipc4_delete_module_instance(struct ipc4_message_request *ipc4)
 /* disable power gating on core 0 */
 static int ipc4_module_process_d0ix(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_set_d0ix d0ix;
 	uint32_t module_id, instance_id;
 
@@ -813,6 +833,9 @@ static int ipc4_module_process_d0ix(struct ipc4_message_request *ipc4)
 /* enable/disable cores according to the state mask */
 static int ipc4_module_process_dx(struct ipc4_message_request *ipc4)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc4_module_set_dx dx;
 	struct ipc4_dx_state_info dx_info;
 	uint32_t module_id, instance_id;
@@ -901,6 +924,10 @@ static int ipc4_process_module_message(struct ipc4_message_request *ipc4)
 	uint32_t type;
 	int ret;
 
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	type = ipc4->primary.r.type;
 
 	switch (type) {
@@ -947,6 +974,9 @@ static int ipc4_process_module_message(struct ipc4_message_request *ipc4)
 
 struct ipc_cmd_hdr *mailbox_validate(void)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	struct ipc_cmd_hdr *hdr = ipc_get()->comp_data;
 	return hdr;
 }
@@ -964,6 +994,9 @@ struct ipc_cmd_hdr *ipc_compact_read_msg(void)
 
 struct ipc_cmd_hdr *ipc_prepare_to_send(const struct ipc_msg *msg)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	msg_data.msg_out.pri = msg->header;
 	msg_data.msg_out.ext = msg->extension;
 
@@ -1039,6 +1072,9 @@ void ipc_msg_reply(struct sof_ipc_reply *reply)
 
 void ipc_cmd(struct ipc_cmd_hdr *_hdr)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
 	/* ignoring _hdr as it does not contain valid data in IPC4/IDC case */
 	struct ipc4_message_request *in = ipc_from_hdr(&msg_data.msg_in);
 	enum ipc4_message_target target;

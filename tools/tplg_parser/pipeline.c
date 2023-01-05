@@ -18,6 +18,8 @@
 #include <tplg_parser/topology.h>
 #include <tplg_parser/tokens.h>
 
+extern bool is_after_d3;
+
 /* scheduling */
 static const struct sof_topology_token sched_tokens[] = {
 	{SOF_TKN_SCHED_PERIOD, SND_SOC_TPLG_TUPLE_TYPE_WORD,
@@ -44,6 +46,10 @@ static const struct sof_topology_token sched_tokens[] = {
 int tplg_create_pipeline(struct tplg_context *ctx,
 		       struct sof_ipc_pipe_new *pipeline)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	struct snd_soc_tplg_vendor_array *array = NULL;
 	size_t total_array_size = 0, read_size;
 	FILE *file = ctx->file;
@@ -116,6 +122,10 @@ int tplg_create_pipeline(struct tplg_context *ctx,
 int tplg_new_pipeline(struct tplg_context *ctx, struct sof_ipc_pipe_new *pipeline,
 		struct snd_soc_tplg_ctl_hdr *rctl)
 {
+	// volatile bool stop = true;
+	// if (stop && is_after_d3)
+	// 	while(stop) {}
+
 	int ret;
 
 	ret = tplg_create_pipeline(ctx, pipeline);
