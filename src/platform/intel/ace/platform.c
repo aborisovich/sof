@@ -25,7 +25,10 @@
 #include <adsp_memory.h>
 #include <zephyr/drivers/mm/mm_drv_intel_adsp_mtl_tlb.h>
 #include <zephyr/pm/pm.h>
+#include <intel_adsp_ipc_devtree.h>
 #include <sof/debug/panic.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 
 #include <sof_versions.h>
 #include <stdint.h>
@@ -103,6 +106,10 @@ static void notify_pm_state_entry(enum pm_state state)
 						 0,
 						 SOF_MEM_CAPS_L3,
 						 storage_buffer_size);
+
+		/* IPC driver may not allow to change power state */
+		__ASSERT(!pm_device_action_run(INTEL_ADSP_IPC_HOST_DEV, PM_DEVICE_ACTION_SUSPEND),
+			"TODO: Prevent entering D3");
 	}
 }
 
@@ -114,12 +121,12 @@ static void notify_pm_state_exit(enum pm_state state)
 		rfree(global_imr_ram_storage);
 		global_imr_ram_storage = NULL;
 
-		/* zero the mask before D3 context restore */
-		struct ipc *ipc = ipc_get();
-		ipc->task_mask = 0;
-		ipc->pm_prepare_D3 = false;
+		pm_device_action_run(INTEL_ADSP_IPC_HOST_DEV, PM_DEVICE_ACTION_RESUME);
+		enum pm_device_state ipc_state = PM_DEVICE_STATE_SUSPENDING;
+		pm_device_state_get(INTEL_ADSP_IPC_HOST_DEV, &ipc_state);
+		__ASSERT_NO_MSG(ipc_state == PM_DEVICE_STATE_ACTIVE);
 
-		/* send FW Ready message */
+		// sends fw-ready message signalling successfull exit from D3 state
 		platform_boot_complete(0);
 	}
 }
