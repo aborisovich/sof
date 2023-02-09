@@ -9,6 +9,7 @@
 #include <sof/audio/component.h>
 #include <rtos/interrupt.h>
 #include <sof/lib/notifier.h>
+#include <sof/schedule/dp_schedule.h>
 #include <sof/schedule/ll_schedule_domain.h>
 #include <sof/schedule/schedule.h>
 #include <sof/schedule/task.h>
@@ -239,6 +240,10 @@ static void zephyr_ll_run(void *data)
 	}
 
 	zephyr_ll_unlock(sch, &flags);
+
+	/* trigger calculation of DP tasks as the last action of LL scheduler. Primary Core only*/
+	if (cpu_get_id() == PLATFORM_PRIMARY_CORE_ID)
+		dp_scheduler_run();
 
 	notifier_event(sch, NOTIFIER_ID_LL_POST_RUN,
 		       NOTIFIER_TARGET_CORE_LOCAL, NULL, 0);

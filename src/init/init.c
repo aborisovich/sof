@@ -26,6 +26,7 @@
 #include <sof/drivers/idc.h>
 #include <sof/schedule/schedule.h>
 #include <sof/schedule/edf_schedule.h>
+#include <sof/schedule/dp_schedule.h>
 #include <sof/schedule/ll_schedule.h>
 #include <sof/schedule/ll_schedule_domain.h>
 #include <ipc/trace.h>
@@ -181,6 +182,11 @@ int secondary_core_init(struct sof *sof)
 	dma_domain = dma_domain_get();
 	if (dma_domain)
 		scheduler_init_ll(dma_domain);
+
+	err = scheduler_dp_init_secondary_core();
+	if (err < 0)
+		return err;
+
 
 	/* initialize IDC mechanism */
 	trace_point(TRACE_BOOT_PLATFORM_IDC);
