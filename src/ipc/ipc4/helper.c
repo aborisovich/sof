@@ -97,6 +97,13 @@ struct comp_dev *comp_new_ipc4(struct ipc4_module_init_instance *module_init)
 	ipc_config.pipeline_id = module_init->extension.r.ppl_instance_id;
 	ipc_config.core = module_init->extension.r.core_id;
 
+
+	if (module_init->extension.r.proc_domain)
+		ipc_config.proc_domain = COMP_PROCESSING_DOMAIN_DP;
+
+	else
+		ipc_config.proc_domain = COMP_PROCESSING_DOMAIN_LL;
+
 	dcache_invalidate_region((__sparse_force void __sparse_cache *)MAILBOX_HOSTBOX_BASE,
 				 MAILBOX_HOSTBOX_SIZE);
 
