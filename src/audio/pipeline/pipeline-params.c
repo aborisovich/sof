@@ -317,7 +317,14 @@ static int pipeline_comp_prepare(struct comp_dev *current,
 		}
 	}
 
-	err = pipeline_comp_task_init(current->pipeline);
+	if (current->ipc_config.proc_domain == COMP_PROCESSING_DOMAIN_LL)
+		/* this is a LL sheduled module */
+		err = pipeline_comp_ll_task_init(current->pipeline);
+	else if (current->ipc_config.proc_domain == COMP_PROCESSING_DOMAIN_DP)
+		/* this is a DP sheduled module */
+		err = pipeline_comp_dp_task_init(current);
+	else
+		err = -EINVAL;
 	if (err < 0)
 		return err;
 
