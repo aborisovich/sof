@@ -44,10 +44,6 @@ enum {
 #define SOF_SCHEDULER_FREE_IRQ_ONLY	BIT(0) /**< Free function disables only
 						 *  interrupts
 						 */
-
-/** \brief tell the scheduler to wait forever before run the task. Note: currently Zephyr DP only */
-#define SOF_SCHEDULER_WAIT_FOREVER ((uint64_t) -1)
-
 /**
  * Scheduler operations.
  *

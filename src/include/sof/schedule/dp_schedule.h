@@ -20,12 +20,16 @@
  * There's only one instance of DP in the system, however, the threads may run on any core
  * Threads are pinned to specific core, there's no SMP processing.
  *
- * Once task is scheduled (schedule_dp_task is called) the task will be active in the system
+ * Once task is scheduled (schedule_task is called) the task will be active in the system
  *
- * Task run() may return 3 values:
+ *
+ * Task run() may return:
  *  SOF_TASK_STATE_RESCHEDULE - the task will be rescheduled as specified in scheduler period
  *  SOF_TASK_STATE_PENDING - the task will not be rescheduled till reschedule_task is called
- *  other states - the task will be terminated
+ *  SOF_TASK_STATE_COMPLETED - the task will be removed from scheduling, but not terminated
+ *				calling schedule_task will add the task to processing again
+ *  SOF_TASK_STATE_CANCEL - the task will be cancelled permanently
+ *  other statuses - assert will go off
  *
  * NOTE: task - means a SOF task
  *	 thread - means a Zephyr preemptible thread
@@ -59,7 +63,7 @@ int scheduler_dp_init_secondary_core(void);
 /**
  * dp_scheduler_run should be run in LL scheduler loop, after all LL task have been executed
  */
-void dp_scheduler_run(void);
+void dp_scheduler_ll_tick(void);
 
 /**
  * \brief initialize a DP task and add it to scheduling

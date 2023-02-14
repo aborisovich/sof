@@ -62,7 +62,7 @@ static inline void zephyr_dp_unlock(uint32_t *flags)
  * Currently there's an assumption that the task is always ready to run
  *
  */
-void dp_scheduler_run(void)
+void dp_scheduler_ll_tick(void)
 {
 	struct list_item *tlist;
 	struct task *curr_task;
@@ -79,116 +79,15 @@ void dp_scheduler_run(void)
 
 		if (curr_task->state == SOF_TASK_STATE_QUEUED) {
 			if (pdata->ticks_to_trigger == 0) {
-				/* run the thread */
+				pdata->ticks_to_trigger = pdata->ticks_period;
+				curr_task->state = SOF_TASK_STATE_RUNNING;
+				/* trigger the thread */
 				k_sem_give(&pdata->sem);
 			} else
 				pdata->ticks_to_trigger--;
 		}
 	}
 	zephyr_dp_unlock(&lock_flags);
-}
-
-/* Thread function called in component context, on target core */
-static void dp_thread_fn(void *p1, void *p2, void *p3)
-{
-	struct task *task = p1;
-	struct dp_task_pdata *task_pdata = task->priv_data;
-	uint32_t lock_flags;
-	enum task_state state;
-
-	do {
-		/*
-		 * the thread is started immediately after creation, it will stop on semaphore
-		 * while in INIT state
-		 */
-		k_sem_take(&task_pdata->sem, K_FOREVER);
-
-		if (task_is_active(task)) {
-			task->state = SOF_TASK_STATE_RUNNING;
-			state = task_run(task);
-
-			/*
-			 * handle task state - the task may be canceled by external call
-			 * or request termination itself
-			 */
-			zephyr_dp_lock(&lock_flags);
-			if (task_is_active(task)) {
-				if (state == SOF_TASK_STATE_RESCHEDULE) {
-					task->state = SOF_TASK_STATE_QUEUED;
-					task_pdata->ticks_to_trigger = task_pdata->ticks_period;
-				} else if (state == SOF_TASK_STATE_PENDING) {
-				/* task_reschedule need to be called to schedule this task again */
-					task->state = SOF_TASK_STATE_PENDING;
-				} else
-					task->state = SOF_TASK_STATE_CANCEL;
-			}
-
-			zephyr_dp_unlock(&lock_flags);
-		}
-	} while (task_is_active(task));
-
-	/* task completed, call complete function */
-	task_complete(task);
-
-	/* zephyr will terminate a thread that exits this functon */
-}
-
-static int scheduler_dp_task_shedule(void *data, struct task *task, uint64_t start,
-				     uint64_t period)
-{
-	struct dp_schedule_data *sch = data;
-	struct dp_task_pdata *pdata = task->priv_data;
-	struct list_item *tlist;
-	struct task *curr_task;
-	uint32_t lock_flags;
-
-	zephyr_dp_lock(&lock_flags);
-	/* check if task is already scheduled */
-	list_for_item(tlist, &sch->tasks) {
-		curr_task = container_of(tlist, struct task, list);
-
-		/* keep original task */
-		if (curr_task == task) {
-			zephyr_dp_unlock(&lock_flags);
-			return 0;
-		}
-	}
-
-	/* calculate period and start time in LL ticks */
-	if (start != SOF_SCHEDULER_WAIT_FOREVER) {
-		pdata->ticks_period = ROUND_DOWN(period, LL_TIMER_PERIOD_US) / LL_TIMER_PERIOD_US;
-		task->state = SOF_TASK_STATE_QUEUED;
-	} else {
-		/* set task as pending, won't be scheduled till task_reshedule is called */
-		pdata->ticks_period = 0;
-		task->state = SOF_TASK_STATE_PENDING;
-	}
-
-	pdata->ticks_to_trigger = ROUND_DOWN(start, LL_TIMER_PERIOD_US) / LL_TIMER_PERIOD_US;
-
-	/* add a task to DP scheduler list */
-	list_item_prepend(&task->list, &sch->tasks);
-	sch->num_tasks++;
-
-	zephyr_dp_unlock(&lock_flags);
-
-	return 0;
-}
-
-static int scheduler_dp_task_reshedule(void *data, struct task *task, uint64_t start)
-{
-	struct dp_task_pdata *pdata = task->priv_data;
-	uint32_t lock_flags;
-
-	if (!task_is_active(task))
-		return -EINVAL;
-
-	zephyr_dp_lock(&lock_flags);
-	pdata->ticks_to_trigger = ROUND_DOWN(start, LL_TIMER_PERIOD_US) / LL_TIMER_PERIOD_US;
-	task->state = SOF_TASK_STATE_QUEUED;
-	zephyr_dp_unlock(&lock_flags);
-
-	return 0;
 }
 
 static int scheduler_dp_task_cancel(void *data, struct task *task)
@@ -220,6 +119,8 @@ static int scheduler_dp_task_free(void *data, struct task *task)
 	zephyr_dp_lock(&lock_flags);
 	list_item_del(&task->list);
 	sch->num_tasks--;
+	task->priv_data = NULL;
+	task->state = SOF_TASK_STATE_FREE;
 	zephyr_dp_unlock(&lock_flags);
 
 	/* free all allocated resources */
@@ -227,16 +128,111 @@ static int scheduler_dp_task_free(void *data, struct task *task)
 	rfree(pdata->thread_id);
 	rfree(pdata);
 
-	task->priv_data = NULL;
+	return 0;
+}
+
+/* Thread function called in component context, on target core */
+static void dp_thread_fn(void *p1, void *p2, void *p3)
+{
+	struct task *task = p1;
+	struct dp_task_pdata *task_pdata = task->priv_data;
+	uint32_t lock_flags;
+	enum task_state state;
+
+	do {
+		/*
+		 * the thread is started immediately after creation, it will stop on semaphore
+		 * while in INIT state
+		 */
+		k_sem_take(&task_pdata->sem, K_FOREVER);
+
+		if (task->state == SOF_TASK_STATE_RUNNING) {
+			state = task_run(task);
+
+			/*
+			 * handle task state - the task may be canceled by external call
+			 * or request termination itself
+			 */
+			zephyr_dp_lock(&lock_flags);
+
+			if (task->state == SOF_TASK_STATE_RUNNING)
+				task->state = state;
+
+			switch (task->state) {
+			case SOF_TASK_STATE_RESCHEDULE:
+				task->state = SOF_TASK_STATE_QUEUED;
+				break;
+
+
+			case SOF_TASK_STATE_CANCEL:
+				scheduler_dp_task_cancel(&dp_sch, task);
+
+			case SOF_TASK_STATE_COMPLETED:
+				task_complete(task);
+				break;
+
+			default:
+				/* illegal state */
+				assert(false);
+			}
+
+			zephyr_dp_unlock(&lock_flags);
+		}
+	} while (task_is_active(task) || (task->state == SOF_TASK_STATE_COMPLETED));
+
+	/* zephyr will terminate a thread that exits this functon */
+}
+
+static int scheduler_dp_task_shedule(void *data, struct task *task, uint64_t start,
+				     uint64_t period)
+{
+	struct dp_schedule_data *sch = data;
+	struct dp_task_pdata *pdata = task->priv_data;
+	struct list_item *tlist;
+	struct task *curr_task;
+	uint32_t lock_flags;
+
+	zephyr_dp_lock(&lock_flags);
+	/* check if task is already scheduled */
+	list_for_item(tlist, &sch->tasks) {
+		curr_task = container_of(tlist, struct task, list);
+
+		/* keep original task */
+		if (curr_task == task) {
+			zephyr_dp_unlock(&lock_flags);
+			return 0;
+		}
+	}
+
+	if ((task->state != SOF_TASK_STATE_INIT) &&
+	    (task->state != SOF_TASK_STATE_COMPLETED))
+		return -EINVAL;
+
+	/* calculate period and start time in LL ticks */
+	pdata->ticks_period = ROUND_DOWN(period, LL_TIMER_PERIOD_US) / LL_TIMER_PERIOD_US;
+	pdata->ticks_to_trigger = ROUND_DOWN(start, LL_TIMER_PERIOD_US) / LL_TIMER_PERIOD_US;
+
+	if (start == 0) {
+		/* trigger the task immediately, don't wait for LL tick */
+		task->state = SOF_TASK_STATE_RUNNING;
+		k_sem_give(&pdata->sem);
+	} else {
+		/* wait for tick */
+		task->state = SOF_TASK_STATE_QUEUED;
+	}
+
+	/* add a task to DP scheduler list */
+	list_item_prepend(&task->list, &sch->tasks);
+	sch->num_tasks++;
+
+	zephyr_dp_unlock(&lock_flags);
 
 	return 0;
 }
 
-
 static struct scheduler_ops schedule_dp_ops = {
 	.schedule_task		= scheduler_dp_task_shedule,
 	.schedule_task_cancel	= scheduler_dp_task_cancel,
-	.reschedule_task	= scheduler_dp_task_reshedule,
 	.schedule_task_free	= scheduler_dp_task_free
 };
 
