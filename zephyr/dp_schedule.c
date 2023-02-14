@@ -166,6 +166,7 @@ static void dp_thread_fn(void *p1, void *p2, void *p3)
 
 			case SOF_TASK_STATE_CANCEL:
 				scheduler_dp_task_cancel(&dp_sch, task);
+				break;
 
 			case SOF_TASK_STATE_COMPLETED:
 				task_complete(task);
