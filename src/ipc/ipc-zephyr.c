@@ -30,11 +30,12 @@
 #include <rtos/wait.h>
 #include <sof/list.h>
 #include <sof/platform.h>
-#include <sof/schedule/edf_schedule.h>
 #include <sof/schedule/schedule.h>
 #include <sof/schedule/task.h>
+#include <sof/schedule/dp_schedule.h>
 #include <rtos/spinlock.h>
 #include <ipc/header.h>
+#include <limits.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -43,6 +44,8 @@
 /* 8fa1d42f-bc6f-464b-867f-547af08834da */
 DECLARE_SOF_UUID("ipc-task", ipc_task_uuid, 0x8fa1d42f, 0xbc6f, 0x464b,
 		 0x86, 0x7f, 0x54, 0x7a, 0xf0, 0x88, 0x34, 0xda);
+
+#define IPC_THREAD_PRIORITY -CONFIG_NUM_COOP_PRIORITIES
 
 /**
  * @brief Private data for IPC.
@@ -62,6 +65,7 @@ static uint32_t g_last_data, g_last_ext_data;
  * will remain set until message would have been processed by scheduled task, i.e.
  * until ipc_platform_complete_cmd() call.
  */
+__attribute__((optimize("-O0")))
 static bool message_handler(const struct device *dev, void *arg, uint32_t data, uint32_t ext_data)
 {
 	struct ipc *ipc = (struct ipc *)arg;
@@ -76,7 +80,11 @@ static bool message_handler(const struct device *dev, void *arg, uint32_t data, 
 #if CONFIG_DEBUG_IPC_COUNTERS
 	increment_ipc_received_counter();
 #endif
-	ipc_schedule_process(ipc);
+	// do not schedule ipc task - execute right away in the interrupt context
+	// all Zephyr threads are stopped
+	schedule_task(&ipc->ipc_task, 0, 0);
+	//reschedule_task(&ipc->ipc_task, 0);
+	//ipc_schedule_process(ipc);
 
 	k_spin_unlock(&ipc->lock, key);
 
@@ -127,10 +135,6 @@ static int ipc_device_resume_handler(const struct device *dev, void *arg)
 
 	/* attach handlers */
 	intel_adsp_ipc_set_message_handler(INTEL_ADSP_IPC_HOST_DEV, message_handler, ipc);
-
-	/* schedule task */
-	schedule_task_init_edf(&ipc->ipc_task, SOF_UUID(ipc_task_uuid),
-				&ipc_task_ops, ipc, 0, 0);
 
 	// we mke sure interrupts are enabled after waking from D3.
 	__ASSERT_NO_MSG(irq_is_enabled(DT_IRQN(INTEL_ADSP_IPC_HOST_DTNODE)));
@@ -241,10 +245,10 @@ int ipc_platform_send_msg(const struct ipc_msg *msg)
 int platform_ipc_init(struct ipc *ipc)
 {
 	ipc_set_drvdata(ipc, NULL);
+	ipc->ipc_task.ops = ipc_task_ops;
 
 	/* schedule task */
-	schedule_task_init_edf(&ipc->ipc_task, SOF_UUID(ipc_task_uuid),
-			       &ipc_task_ops, ipc, 0, 0);
+	scheduler_dp_task_init(&ipc->ipc_task, SOF_UUID(ipc_task_uuid), ipc_do_cmd, ipc, 0, 8192, IPC_THREAD_PRIORITY);
 
 	/* configure interrupt - work is done internally by Zephyr API */
 

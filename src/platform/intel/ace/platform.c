@@ -147,7 +147,6 @@ int platform_init(struct sof *sof)
 	clock_set_freq(CLK_CPU(cpu_get_id()), CLK_MAX_CPU_HZ);
 
 	trace_point(TRACE_BOOT_PLATFORM_SCHED);
-	scheduler_init_edf();
 
 	/* init low latency timer domain and scheduler. Any failure is fatal */
 	sof->platform_timer_domain = zephyr_domain_init(PLATFORM_DEFAULT_CLOCK);
