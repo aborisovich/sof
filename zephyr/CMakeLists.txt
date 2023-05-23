@@ -65,6 +65,7 @@ get_filename_component(RIMAGE_CONFIG "../rimage/config" ABSOLUTE)
 set(RIMAGE_CONFIG_PATH ${RIMAGE_CONFIG} CACHE PATH
     " Path to rimage board configuration files")
 
+include(${sof_top_dir}scripts/cmake/rimage.cmake)
 include(ExternalProject)
 
 ExternalProject_Add(smex_ep

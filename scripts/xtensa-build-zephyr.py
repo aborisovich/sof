@@ -496,30 +496,6 @@ RIMAGE_BUILD_DIR  = west_top / "build-rimage"
 # detailed comments in west.yml
 RIMAGE_SOURCE_DIR = west_top / "sof" / "rimage"
 
-def build_rimage():
-
-	# Detect non-west rimage duplicates, example: git submdule
-	# SOF_TOP/rimage = sof2/rimage
-	nested_rimage = pathlib.Path(SOF_TOP, "rimage")
-	if nested_rimage.is_dir() and not nested_rimage.samefile(RIMAGE_SOURCE_DIR):
-		raise RuntimeError(
-			f"""Two rimage source directories found.
-     Move non-west {nested_rimage} out of west workspace {west_top}.
-     See output of 'west list'."""
-		)
-	rimage_dir_name = RIMAGE_BUILD_DIR.name
-	# CMake build rimage module
-	if not (RIMAGE_BUILD_DIR / "CMakeCache.txt").is_file():
-		execute_command(["cmake", "-B", rimage_dir_name, "-G", "Ninja",
-				 "-S", str(RIMAGE_SOURCE_DIR)],
-				cwd=west_top)
-	rimage_build_cmd = ["cmake", "--build", rimage_dir_name]
-	if args.jobs is not None:
-		rimage_build_cmd.append(f"-j{args.jobs}")
-	if args.verbose > 1:
-			rimage_build_cmd.append("-v")
-	execute_command(rimage_build_cmd, cwd=west_top)
-
 
 STAGING_DIR = None
 def build_platforms():
@@ -907,7 +883,6 @@ def main():
 		create_zephyr_sof_symlink()
 
 	if args.platforms:
-		build_rimage()
 		build_platforms()
 		show_installed_files()
 
