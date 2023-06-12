@@ -41,6 +41,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sof/debug/perf/mcps_profiler.h>
 
 /* Command format errors during fuzzing are reported for virtually all
  * commands, and the resulting flood of logging becomes a severe
@@ -215,6 +216,7 @@ static bool is_any_ppl_active(void)
  *     ERROR Stop       EOS       |______\ SAVE
  *                                      /
  */
+__attribute__((optnone))
 static int set_pipeline_state(struct ipc_comp_dev *ppl_icd, uint32_t cmd,
 				bool *delayed)
 {
@@ -258,6 +260,9 @@ static int set_pipeline_state(struct ipc_comp_dev *ppl_icd, uint32_t cmd,
 			break;
 		case COMP_STATE_PAUSED:
 			cmd = COMP_TRIGGER_PRE_RELEASE;
+			volatile bool stop = true;
+			while(stop) {}
+			get_profiler_results();
 			break;
 		default:
 			ipc_cmd_err(&ipc_tr, "ipc: current status %d", status);
@@ -277,6 +282,10 @@ static int set_pipeline_state(struct ipc_comp_dev *ppl_icd, uint32_t cmd,
 			return 0;
 		case COMP_STATE_ACTIVE:
 		case COMP_STATE_PAUSED:
+			volatile bool stop = true;
+			while(stop) {}
+			mcps_profiler_init(INT_MAX);
+			mcps_profiler_start();
 			ret = pipeline_trigger(host->cd->pipeline, host->cd, COMP_TRIGGER_STOP);
 			if (ret < 0) {
 				ipc_cmd_err(&ipc_tr, "ipc: comp %d trigger 0x%x failed %d",
@@ -285,6 +294,7 @@ static int set_pipeline_state(struct ipc_comp_dev *ppl_icd, uint32_t cmd,
 			}
 			if (ret == PPL_STATUS_SCHEDULED)
 				*delayed = true;
+			get_profiler_results();
 			break;
 		default:
 			ipc_cmd_err(&ipc_tr, "ipc: invalid status %d for RESET", status);

@@ -257,6 +257,10 @@ if (CONFIG_SOC_SERIES_INTEL_ACE)
 		${SOF_PLATFORM_PATH}/intel/ace/lib/watchdog.c
 	)
 
+	zephyr_library_sources_ifdef(CONFIG_MCPS_PROFILER
+		${SOF_SRC_PATH}/debug/perf/mcps_profiler.c
+	)
+
 	if (CONFIG_SOC_INTEL_ACE15_MTPM)
 		set(PLATFORM "meteorlake")
 	elseif(CONFIG_SOC_INTEL_ACE20_LNL)
